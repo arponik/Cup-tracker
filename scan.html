@@ -1,0 +1,33 @@
+<scan.html>
+<!doctype html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+  </head>
+  <body>
+    <h3>Scan Cup QR</h3>
+    <div id="reader" style="width:300px;"></div>
+    <script>
+      // 🔧 Replace this with your deployed AWS API endpoint URL
+      const API = "YOUR_API_URL";
+
+      function onScanSuccess(decodedText) {
+        fetch(API, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cup_id: decodedText })
+        })
+        .then(r => r.json())
+        .then(j => alert(JSON.stringify(j)))
+        .catch(e => alert("Error: " + e));
+      }
+
+      new Html5Qrcode("reader").start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: 250 },
+        onScanSuccess
+      );
+    </script>
+  </body>
+</html>
