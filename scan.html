@@ -1,33 +1,98 @@
-<scan.html>
 <!doctype html>
 <html>
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
+    <style>
+      #reader { width: 100%; max-width: 400px; margin: 0 auto; }
+      #status { text-align:center; margin-top:12px; color:#555 }
+    </style>
   </head>
   <body>
-    <h3>Scan Cup QR</h3>
-    <div id="reader" style="width:300px;"></div>
-    <script>
-      // 🔧 Replace this with your deployed AWS API endpoint URL
-      const API = "YOUR_API_URL";
+    <h3 style="text-align:center">Scan Cup QR</h3>
+    <div id="reader"></div>
+    <div id="status">Initializing scanner…</div>
 
-      function onScanSuccess(decodedText) {
-        fetch(API, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cup_id: decodedText })
-        })
-        .then(r => r.json())
-        .then(j => alert(JSON.stringify(j)))
-        .catch(e => alert("Error: " + e));
+    <script>
+      // 🔧 Put your deployed API endpoint URL in quotes
+      const API = "https://oba9ahwl58.execute-api.us-west-1.amazonaws.com/Prod/";
+
+      const html5QrCode = new Html5Qrcode("reader");
+      const config = { fps: 10, qrbox: 250 };
+
+      function setStatus(msg) {
+        document.getElementById("status").textContent = msg;
+        console.log(msg);
       }
 
-      new Html5Qrcode("reader").start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: 250 },
-        onScanSuccess
-      );
+      function onScanSuccess(decodedText) {
+        setStatus("Scanned: " + decodedText + " — sending to server...");
+        // Stop the scanner to avoid duplicate scans
+        html5QrCode.stop().then(() => {
+          // send to API
+          fetch(API, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cup_id: decodedText })
+          })
+          .then(async (r) => {
+            // If API returns non-JSON, handle gracefully
+            let txt = await r.text();
+            try { return JSON.parse(txt); } catch (_) { return { raw: txt }; }
+          })
+          .then(j => {
+            alert("Server response:\n" + JSON.stringify(j));
+            setStatus("Scan complete. You can scan again.");
+            // optionally restart scanner after short delay:
+            setTimeout(() => startScanner(), 800);
+          })
+          .catch(err => {
+            alert("Error sending to API: " + err);
+            setStatus("Error sending to API. See console.");
+            console.error(err);
+            // try to restart scanner
+            setTimeout(() => startScanner(), 1200);
+          });
+        }).catch(err => {
+          console.error("Failed to stop scanner:", err);
+          setStatus("Scanner stop failed — check console.");
+        });
+      }
+
+      function onScanError(errorMessage) {
+        // optional: ignore frequent decode errors
+        // console.warn("Scan error:", errorMessage);
+      }
+
+      function startScanner() {
+        setStatus("Looking for cameras…");
+        Html5Qrcode.getCameras().then(cameras => {
+          if (cameras && cameras.length) {
+            // prefer back-facing camera if available
+            let backCamera = cameras.find(c => /back|rear|environment/i.test(c.label)) || cameras[0];
+            const cameraId = backCamera.id || backCamera.deviceId || backCamera;
+            setStatus("Starting camera: " + (backCamera.label || cameraId));
+            html5QrCode.start(
+              cameraId,
+              config,
+              onScanSuccess,
+              onScanError
+            ).catch(err => {
+              console.error("start() failed:", err);
+              setStatus("Unable to start camera: " + err);
+            });
+          } else {
+            setStatus("No cameras found on this device.");
+          }
+        }).catch(err => {
+          console.error("getCameras() error:", err);
+          setStatus("Cannot access camera: " + err + ". Ensure page is HTTPS and camera permission is allowed.");
+        });
+      }
+
+      // Start on load
+      startScanner();
     </script>
   </body>
 </html>
+
